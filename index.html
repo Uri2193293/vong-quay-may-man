@@ -19,7 +19,7 @@ body{margin:0;min-height:100vh;font-family:var(--f);color:var(--txt);background:
 header{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:12px 16px}
 header::before{content:"";grid-column:1;grid-row:1}
 .header-actions{grid-column:3;grid-row:1;display:flex;justify-content:flex-end;gap:8px}
-#title{grid-column:2;grid-row:1;width:min(100%,680px);min-width:0;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--txt);font:800 clamp(20px,3.6vw,32px) var(--f);text-align:center;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 0 18px var(--pri);min-width:0}
+#title{grid-column:2;grid-row:1;width:min(100%,680px);min-width:0;background:transparent;border:0;border-bottom:1px solid var(--line);color:var(--txt);font:800 clamp(20px,3.6vw,32px) var(--f);text-align:center;letter-spacing:.06em;text-transform:uppercase;text-shadow:0 0 18px var(--pri);line-height:1.55;padding:7px 12px 9px;min-height:62px;overflow:visible;min-width:0}
 button{cursor:pointer;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font:700 15px var(--f);color:var(--txt);background:var(--glass);backdrop-filter:blur(8px)}
 button:hover{border-color:var(--pri);box-shadow:0 0 14px #22d3ee55}
 main{max-width:1100px;margin:0 auto;padding:4px 16px 40px;text-align:center}
@@ -33,6 +33,11 @@ main{max-width:1100px;margin:0 auto;padding:4px 16px 40px;text-align:center}
 #hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:19%;aspect-ratio:1;border-radius:50%;padding:0;font-size:clamp(12px,2.2vw,20px);font-weight:900;letter-spacing:.08em;background:radial-gradient(circle at 35% 30%,#2a3370,#080c26);border:3px solid var(--pri);box-shadow:0 0 22px var(--pri),inset 0 0 18px #22d3ee55}
 #go{position:relative;flex-shrink:0;margin:2px 0 8px;font-size:22px;padding:14px 64px;border-radius:50px;letter-spacing:.14em;border:0;background:linear-gradient(135deg,var(--pri),var(--acc));color:#05060f;box-shadow:0 0 28px #22d3ee66}
 #go:disabled,#hub:disabled{opacity:.6;cursor:wait}
+#stop{font-size:20px;padding:13px 48px;border-radius:50px;background:linear-gradient(135deg,#fb7185,#ef4444);border:0;color:#190508;box-shadow:0 0 20px #ef444466}
+#stop:disabled{opacity:.35;cursor:not-allowed;box-shadow:none}
+.spin-controls{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:12px}
+#hub.has-image{background-position:center!important;background-size:cover!important;background-repeat:no-repeat!important;color:var(--hub-text,#fff);text-shadow:0 1px 5px #000b}
+#colorStatus{display:block;opacity:.75;font-size:12px;line-height:1.5;margin-top:5px}
 #side{width:min(680px,100%);text-align:left;background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:14px 16px;backdrop-filter:blur(10px)}
 #side h3{margin:0 0 10px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--pri)}
 #wl{display:flex;flex-wrap:wrap;gap:8px}
@@ -83,7 +88,7 @@ body.fs .wc{font-size:26px;width:100%}
   <div class="stage">
     <div class="left">
       <div id="wbox"><canvas id="wheel"></canvas><div id="ptr"></div><button id="hub">QUAY</button></div>
-      <button id="go">QUAY</button>
+      <div class="spin-controls"><button id="go">QUAY</button><button id="stop" disabled>DỪNG</button></div>
     </div>
     <div id="side">
       <h3>🏆 Người trúng giải</h3>
@@ -119,6 +124,13 @@ Bùi Thị Lan</textarea>
   <label>Thời gian mỗi lần quay (giây)<input type="number" id="dur" value="5" min="1" max="30"></label>
   <label>Không trùng người/số đã trúng<input type="checkbox" id="uniq" checked></label>
   <button id="bReset" style="width:100%;margin-top:6px">↺ Làm mới danh sách đã trúng</button>
+  <h4>Hình nền nút QUAY (ở giữa)</h4>
+  <label>Chọn ảnh nút QUAY<input type="file" id="hubf" accept="image/*" style="max-width:155px"></label>
+  <button id="hubx" style="width:100%">Xóa ảnh nút QUAY</button>
+  <h4>Tự động phối màu theo nền</h4>
+  <label>Tự phối màu tương phản<input type="checkbox" id="autoColors" checked></label>
+  <button id="randomColors" style="width:100%;margin-top:6px">🎨 Random bảng màu mới</button>
+  <span id="colorStatus">Màu sẽ tự cập nhật khi tải ảnh nền mới.</span>
   <h4>Màu giao diện</h4>
   <label>Nền (màu 1)<input type="color" id="c1" value="#050816"></label>
   <label>Nền (màu 2)<input type="color" id="c2" value="#1e1b4b"></label>
@@ -136,20 +148,60 @@ Bùi Thị Lan</textarea>
 
 <script>
 const $=id=>document.getElementById(id);
-let mode="list",busy=false,won=new Set(),round=0,segs=[],rot=0,muted=false,AC=null;
+let mode="list",busy=false,won=new Set(),round=0,segs=[],rot=0,muted=false,AC=null,stopRequested=false,stopAfterCurrent=false,backgroundBrightness=25;
 const cv=$("wheel"),ctx=cv.getContext("2d"),T=Math.PI*2;
 const presets=[["#050816","#1e1b4b","#22d3ee","#a855f7","#06b6d4","#6366f1","#a855f7","#ec4899"],["#1a0a14","#7f1d1d","#fbbf24","#fb7185","#f43f5e","#f97316","#eab308","#be185d"],["#021a14","#064e3b","#34d399","#22d3ee","#10b981","#14b8a6","#0ea5e9","#84cc16"],["#0b0b0f","#27272a","#facc15","#f59e0b","#b45309","#ca8a04","#78350f","#d97706"]];
 presets.forEach(p=>{const b=document.createElement("button");b.className="pre";b.style.background=`linear-gradient(135deg,${p[0]},${p[1]} 50%,${p[2]})`;
  b.onclick=()=>{["c1","c2","cp","ca","w1","w2","w3","w4"].forEach((id,i)=>$(id).value=p[i]);theme()};$("pres").appendChild(b)});
 function theme(){const s=document.documentElement.style;[["--bg1","c1"],["--bg2","c2"],["--pri","cp"],["--acc","ca"],["--txt","ct"]].forEach(([v,i])=>s.setProperty(v,$(i).value));draw()}
 ["c1","c2","cp","ca","ct","w1","w2","w3","w4"].forEach(i=>$(i).oninput=theme);
+
+/* Bảng màu tương phản lấy cảm hứng từ độ sáng ảnh nền. */
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+function colorRgb(hex){let n=parseInt(hex.slice(1),16);return [(n>>16)&255,(n>>8)&255,n&255]}
+function colorLight(hex){const [r,g,b]=colorRgb(hex);return .2126*r+.7152*g+.0722*b}
+function randomPalette(){
+ const bright=backgroundBrightness>145;
+ const hue=Math.random()*360;
+ // Nền sáng: ô màu tối, nền tối: ô màu bão hòa trung-tối; chữ được chọn riêng theo từng ô.
+ const colors=Array.from({length:4},(_,i)=>{
+  const h=(hue+i*83+Math.random()*24)%360;
+  const l=bright?24+Math.random()*13:36+Math.random()*14;
+  const sat=65+Math.random()*23;
+  return hslHex(h,sat,l);
+ });
+ ['w1','w2','w3','w4'].forEach((id,i)=>$(id).value=colors[i]);
+ $('cp').value=hslHex(hue,87,bright?35:68);
+ $('ca').value=hslHex((hue+125)%360,85,bright?36:68);
+ $('ct').value=bright?'#101629':'#f8faff';
+ $('colorStatus').textContent=`Đã tạo bảng màu ${bright?'cho nền sáng':'cho nền tối'} • chữ tự tương phản với từng ô.`;
+ theme();
+}
+function hslHex(h,s,l){h/=360;s/=100;l/=100;const a=s*Math.min(l,1-l);
+ const f=n=>{const k=(n+h*12)%12;return Math.round(255*(l-a*Math.max(-1,Math.min(k-3,9-k,1))))};
+ return '#'+[f(0),f(8),f(4)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function updateBgBrightnessFromColors(){backgroundBrightness=(colorLight($('c1').value)+colorLight($('c2').value))/2}
+$('randomColors').onclick=randomPalette;
+$('autoColors').onchange=()=>{if($('autoColors').checked){updateBgBrightnessFromColors();randomPalette()}else $('colorStatus').textContent='Tự động phối màu đã tắt. Bạn có thể chọn màu thủ công.'};
+['c1','c2'].forEach(id=>$(id).addEventListener('change',()=>{updateBgBrightnessFromColors();if($('autoColors').checked)randomPalette()}));
+// Nền nút QUAY: ảnh chỉ dùng trong phiên hiện tại, không tải lên máy chủ.
+$('hubf').onchange=e=>{const f=e.target.files?.[0];if(!f)return;
+ const url=URL.createObjectURL(f),im=new Image();
+ im.onload=()=>{const c=document.createElement('canvas');const ratio=Math.min(1,400/Math.max(im.width,im.height));c.width=Math.max(1,Math.round(im.width*ratio));c.height=Math.max(1,Math.round(im.height*ratio));c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+ $('hub').style.backgroundImage=`url("${c.toDataURL('image/png')}")`;$('hub').classList.add('has-image');URL.revokeObjectURL(url)};
+ im.onerror=()=>{alert('Không đọc được hình nút QUAY');URL.revokeObjectURL(url)};im.src=url;e.target.value='';};
+$('hubx').onclick=()=>{$('hub').style.backgroundImage='';$('hub').classList.remove('has-image')};
+
 $("bgf").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
  r.onerror=()=>alert("Không đọc được ảnh");
  r.onload=()=>{const im=new Image();im.onerror=()=>alert("File ảnh không hợp lệ");
   im.onload=()=>{const s=Math.min(1,1920/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
-   c.getContext("2d").drawImage(im,0,0,c.width,c.height);$("bgimg").style.backgroundImage=`url(${c.toDataURL("image/jpeg",.85)})`};im.src=r.result};
+   c.getContext("2d").drawImage(im,0,0,c.width,c.height);$("bgimg").style.backgroundImage=`url(${c.toDataURL("image/jpeg",.85)})`;
+    const sc=document.createElement('canvas');sc.width=sc.height=32;let scx=sc.getContext('2d');scx.drawImage(im,0,0,32,32);let pixels=scx.getImageData(0,0,32,32).data,total=0;
+    for(let j=0;j<pixels.length;j+=4)total+=(.2126*pixels[j]+.7152*pixels[j+1]+.0722*pixels[j+2]);
+    backgroundBrightness=total/(pixels.length/4);if($('autoColors').checked)randomPalette();};im.src=r.result};
  r.readAsDataURL(f);e.target.value=""};
-$("bgx").onclick=()=>$("bgimg").style.backgroundImage="none";
+$("bgx").onclick=()=>{$("bgimg").style.backgroundImage="none";updateBgBrightnessFromColors();if($('autoColors').checked)randomPalette()};
 $("bSet").onclick=()=>$("panel").classList.add("open");
 $("bClose").onclick=()=>$("panel").classList.remove("open");
 function setMute(){$("bMute").textContent=$("bMute2").textContent=muted?"🔇":"🔊"}
@@ -187,7 +239,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function basePool(){const u=$("uniq").checked;let all;
  if(mode=="list")all=getNames();else{const x=+$("nmin").value||0,y=+$("nmax").value||0,a=Math.min(x,y),b=Math.max(x,y);all=[];if(b-a<=200000)for(let i=a;i<=b;i++)all.push(String(i))}
  return u?all.filter(x=>!won.has(x)):all}
-function preview(){const p=basePool();segs=p.length>60?shuffle(p).slice(0,24):p;$("cnt").textContent=`Có ${getNames().length} tên · đã trúng ${won.size}`;draw()}
+function preview(){const p=basePool();segs=p;$("cnt").textContent=`Có ${getNames().length} tên · đã trúng ${won.size}`;draw()}
 
 /* vòng quay */
 function mix(h,t){const n=parseInt(h.slice(1),16);return`rgb(${(n>>16)*t|0},${((n>>8)&255)*t|0},${(n&255)*t|0})`}
@@ -195,66 +247,82 @@ function lum(h){const n=parseInt(h.slice(1),16);return .299*(n>>16)+.587*((n>>8)
 function size(){const fs=document.body.classList.contains("fs");
  let s=fs?Math.min(innerHeight-150,innerWidth<=820?innerWidth-40:innerWidth-430,820):Math.min(innerWidth-32,540);s=Math.max(240,s);
  const d=devicePixelRatio||1;cv.style.width=cv.style.height=s+"px";cv.width=cv.height=Math.round(s*d);draw()}
-function draw(){const d=cv.width,R=d/2,k=d/560,n=segs.length,Rs=R-30*k;ctx.clearRect(0,0,d,d);
- const pri=$("cp").value,acc=$("ca").value;
- let g=ctx.createRadialGradient(R,R,Rs,R,R,R);g.addColorStop(0,"#10163a");g.addColorStop(1,"#03040d");
+function draw(){
+ const d=cv.width,R=d/2,k=d/560,n=segs.length,Rs=R-30*k;
+ ctx.clearRect(0,0,d,d);
+ const pri=$('cp').value,acc=$('ca').value;
+ const g=ctx.createRadialGradient(R,R,Rs,R,R,R);g.addColorStop(0,'#10163a');g.addColorStop(1,'#03040d');
  ctx.beginPath();ctx.arc(R,R,R,0,T);ctx.fillStyle=g;ctx.fill();
  ctx.lineWidth=3*k;ctx.strokeStyle=pri;ctx.shadowColor=pri;ctx.shadowBlur=14*k;ctx.beginPath();ctx.arc(R,R,R-2*k,0,T);ctx.stroke();ctx.shadowBlur=0;
- for(let i=0;i<40;i++){const a=i/40*T;ctx.beginPath();ctx.arc(R+Math.cos(a)*(R-15*k),R+Math.sin(a)*(R-15*k),3.2*k,0,T);ctx.fillStyle=i%2?"#ffffff55":acc;ctx.fill()}
- if(!n){ctx.beginPath();ctx.arc(R,R,Rs,0,T);ctx.fillStyle="#ffffff14";ctx.fill();return}
- const a=T/n,cols=["w1","w2","w3","w4"].map(i=>$(i).value);
- for(let i=0;i<n;i++){let c=cols[i%4];if(n%4==1&&i==n-1)c=cols[1];
-  const gr=ctx.createRadialGradient(R,R,0,R,R,Rs);gr.addColorStop(0,mix(c,.35));gr.addColorStop(1,c);
-  ctx.beginPath();ctx.moveTo(R,R);ctx.arc(R,R,Rs,rot+i*a,rot+(i+1)*a);ctx.closePath();ctx.fillStyle=gr;ctx.fill();
-  ctx.lineWidth=1.2*k;ctx.strokeStyle="#ffffff40";ctx.stroke();
-  // Giữ toàn bộ chữ nằm ngoài nút QUAY ở tâm (nút rộng 19% đường kính).
-  const outer=Rs-20*k;
-  const hubSafeRadius=R*.19+18*k; // bán kính nút + khoảng cách an toàn
-  const availableWidth=Math.max(0,outer-hubSafeRadius);
-  const baseFont=Math.min(Rs*.1,a*Rs*.5);
-  if(baseFont>6*k&&availableWidth>12*k){
-   ctx.save();ctx.translate(R,R);ctx.rotate(rot+(i+.5)*a);
-   ctx.textAlign="right";ctx.textBaseline="middle";
-   ctx.fillStyle=lum(c)>170?"#0a0a14":"#fff";
-   let fontSize=baseFont;
-   const setFont=()=>{ctx.font=`800 ${fontSize}px "Be Vietnam Pro",system-ui,sans-serif`};
-   setFont();
-   let t=String(segs[i]);
-   // Thu nhỏ font trước, chỉ rút gọn tên khi vẫn không đủ khoảng trống.
-   while(ctx.measureText(t).width>availableWidth&&fontSize>11*k){
-    fontSize=Math.max(11*k,fontSize-1*k);setFont();
-   }
-   if(ctx.measureText(t).width>availableWidth){
-    while(t.length>1&&ctx.measureText(t+"…").width>availableWidth)t=t.slice(0,-1);
-    t=t+"…";
-   }
-   ctx.fillText(t,outer,0,availableWidth);
-   ctx.restore();
-  }}
- ctx.beginPath();ctx.arc(R,R,Rs,0,T);ctx.lineWidth=2*k;ctx.strokeStyle="#ffffff66";ctx.stroke()}
-function spinTo(idx,ms){return new Promise(res=>{const n=segs.length,a=T/n,target=-(idx+.5+(Math.random()-.5)*.7)*a;
- const delta=(((target-rot)%T)+T)%T+T*6,r0=rot,t0=performance.now();let last=-1;
- (function f(t){const p=Math.min(1,(t-t0)/ms);rot=r0+delta*(1-Math.pow(1-p,4));
-  const cur=Math.floor((((-rot)%T)+T)%T/a)%n;if(cur!==last){last=cur;tick()}
-  draw();if(p<1)requestAnimationFrame(f);else{rot%=T;res()}})(t0)})}
+ for(let i=0;i<40;i++){const a=i/40*T;ctx.beginPath();ctx.arc(R+Math.cos(a)*(R-15*k),R+Math.sin(a)*(R-15*k),3.2*k,0,T);ctx.fillStyle=i%2?'#ffffff55':acc;ctx.fill()}
+ if(!n){ctx.beginPath();ctx.arc(R,R,Rs,0,T);ctx.fillStyle='#ffffff14';ctx.fill();return}
+ const a=T/n,cols=['w1','w2','w3','w4'].map(i=>$(i).value);
+ const inner=R*.19+20*k,outer=Rs-18*k,radialSpace=Math.max(1,outer-inner);
+ // Vẽ đủ 100% ô: không lấy mẫu hay giới hạn 24/30 tên.
+ for(let i=0;i<n;i++){
+  const c=cols[i%4],begin=rot+i*a,end=begin+a;
+  ctx.beginPath();ctx.moveTo(R,R);ctx.arc(R,R,Rs,begin,end);ctx.closePath();
+  ctx.fillStyle=c;ctx.fill();
+  if(a*Rs>1){ctx.lineWidth=Math.max(.25*k,.8*k*Math.min(1,40/n));ctx.strokeStyle='#ffffff50';ctx.stroke()}
+ }
+ // Tất cả tên được vẽ. Khi các ô quá mảnh, chữ có thể quá nhỏ để đọc ở kích thước màn hình thực tế.
+ for(let i=0;i<n;i++){
+  const t=String(segs[i]),c=cols[i%4];
+  const arcSpace=a*(inner+radialSpace*.58)*.78;
+  let fontSize=Math.min(26*k,arcSpace,radialSpace*.23);
+  if(fontSize<.25*k)fontSize=.25*k;
+  ctx.save();ctx.translate(R,R);ctx.rotate(rot+(i+.5)*a);
+  ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.fillStyle=colorLight(c)>147?'#080e1d':'#ffffff';
+  ctx.font=`800 ${fontSize}px "Be Vietnam Pro",system-ui,sans-serif`;
+  const measured=ctx.measureText(t).width;
+  if(measured>radialSpace&&measured>0){fontSize*=radialSpace/measured;ctx.font=`800 ${Math.max(.1,fontSize)}px "Be Vietnam Pro",system-ui,sans-serif`}
+  // Không dùng dấu ...; không lấn vào nút QUAY (kể cả tên dài).
+  ctx.fillText(t,outer,0,radialSpace);
+  ctx.restore();
+ }
+ ctx.beginPath();ctx.arc(R,R,Rs,0,T);ctx.lineWidth=2*k;ctx.strokeStyle='#ffffff66';ctx.stroke();
+}
+function spinTo(idx,ms){return new Promise(res=>{
+ const n=segs.length,a=T/n,target=-(idx+.5)*a;
+ let from=rot,start=performance.now(),duration=ms;
+ let delta=(((target-from)%T)+T)%T+T*6,last=-1,wasStopped=false;
+ function f(t){
+  if(stopRequested&&!wasStopped){
+   wasStopped=true;stopRequested=false;
+   from=rot;start=t;duration=1050;
+   // Giảm tốc từ góc đang quay, kết thúc chính xác ở ô thắng.
+   delta=(((target-from)%T)+T)%T+T*1.15;
+  }
+  const p=Math.min(1,(t-start)/duration);
+  rot=from+delta*(1-Math.pow(1-p,4));
+  const cur=Math.floor((((-rot)%T)+T)%T/a)%n;
+  if(cur!==last){last=cur;tick()}
+  draw();
+  if(p<1)requestAnimationFrame(f);else{rot%=T;res()}
+ }
+ requestAnimationFrame(f)
+})}
+$('stop').onclick=()=>{if(!busy)return;stopRequested=true;stopAfterCurrent=true;$('stop').disabled=true;$('stop').textContent='ĐANG DỪNG…'};
 async function run(){
  if(busy)return;ac();
  const qty=Math.max(1,+$("qty").value||1),dur=Math.max(1,+$("dur").value||5)*1000,u=$("uniq").checked;
  let avail=basePool();
  if(!avail.length){alert("Không còn gì để quay. Hãy nhấn “Làm mới danh sách đã trúng” hoặc thêm dữ liệu.");return}
  const n=Math.min(qty,avail.length),ms=n==1?dur:Math.max(1800,dur*.6),got=[];
- busy=true;$("hub").disabled=$("go").disabled=true;$("wl").innerHTML="";
+ busy=true;stopRequested=false;stopAfterCurrent=false;$("hub").disabled=$("go").disabled=true;$("stop").disabled=false;$("stop").textContent="DỪNG";$("wl").innerHTML="";
  for(let k=0;k<n;k++){
   const w=avail[rnd(0,avail.length-1)];
-  segs=avail.length>60?shuffle(shuffle(avail.filter(x=>x!==w)).slice(0,29).concat(w)):avail.slice();
+  segs=avail.slice();
   await spinTo(segs.indexOf(w),ms);
   got.push(w);avail=avail.filter(x=>x!==w);if(u)won.add(w);
   const c=document.createElement("div");c.className="wc";c.innerHTML=`<i>${k+1}</i>${esc(w)}`;$("wl").appendChild(c);c.scrollIntoView({block:"nearest"});
   fanfare();fireworks(k==n-1?6:2);
+  if(stopAfterCurrent)break;
   if(k<n-1)await sleep(1100)}
  round++;const hl=$("hl");if(round==1){hl.innerHTML="";hl.className=""}
  const h=document.createElement("div");h.innerHTML=`<b>Lần ${round}:</b> ${got.map(esc).join(", ")}`;hl.prepend(h);
- busy=false;$("hub").disabled=$("go").disabled=false;await sleep(2500);if(!busy)preview()}
+ busy=false;$("hub").disabled=$("go").disabled=false;$("stop").disabled=true;$("stop").textContent="DỪNG";await sleep(2500);if(!busy)preview()}
 $("hub").onclick=run;$("go").onclick=run;cv.onclick=run;
 function setMode(m){if(busy)return;mode=m;$("tList").classList.toggle("on",m=="list");$("tNum").classList.toggle("on",m=="num");
  $("secList").classList.toggle("hide",m!="list");$("secNum").classList.toggle("hide",m!="num");preview()}
@@ -267,7 +335,7 @@ $("xl").onchange=async e=>{const f=e.target.files[0];if(!f)return;
  let col=rows.map(r=>String(r[0]??"").trim()).filter(Boolean);if($("hdr").checked)col=col.slice(1);
  $("names").value=col.join("\n");won.clear();preview();alert(`Đã nhập ${col.length} tên từ file`)}
  catch(err){alert("Không đọc được file Excel")}e.target.value=""};
-addEventListener("resize",size);size();preview();
+addEventListener("resize",size);updateBgBrightnessFromColors();size();preview();
 try{document.fonts.load('800 20px "Be Vietnam Pro"').then(draw)}catch(e){}
 </script>
 </body>
