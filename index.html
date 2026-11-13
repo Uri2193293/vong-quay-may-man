@@ -68,6 +68,10 @@ body.fs .wc{font-size:26px;width:100%}
 #panel input[type=color]{width:46px;height:30px;border:0;background:none;padding:0}
 .row{display:flex;gap:6px;flex-wrap:wrap}
 .pre{width:44px;height:30px;border-radius:8px;padding:0}
+#dataActions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}
+#dataActions button{font-size:12px;padding:9px 6px}
+#saveStatus{display:block;font-size:12px;color:#9bead8;line-height:1.5;margin:7px 0}
+#shareInfo{display:block;font-size:12px;opacity:.82;line-height:1.6}
 .hide{display:none}
 </style>
 </head>
@@ -113,6 +117,16 @@ Bùi Thị Lan</textarea>
     <label>Nhập từ Excel/CSV (cột 1)<input type="file" id="xl" accept=".xlsx,.xls,.csv" style="max-width:150px"></label>
     <label>Dòng đầu là tiêu đề<input type="checkbox" id="hdr" checked></label>
     <span id="cnt" style="font-size:13px;opacity:.8"></span>
+    <h4>💾 Lưu &amp; mở dữ liệu trên máy khác</h4>
+    <span id="saveStatus" role="status">Đang kiểm tra dữ liệu đã lưu…</span>
+    <div id="dataActions">
+      <button id="saveNow" type="button">💾 Lưu ngay</button>
+      <button id="shareData" type="button">🔗 Sao chép link dữ liệu</button>
+      <button id="exportData" type="button">⬇ Xuất file sao lưu</button>
+      <button id="importData" type="button">⬆ Nhập file sao lưu</button>
+    </div>
+    <input type="file" id="backupFile" accept=".json,application/json" hidden>
+    <span id="shareInfo">Tự lưu trên máy đang dùng. Để chuyển máy, hãy gửi <b>link dữ liệu</b> hoặc dùng <b>file sao lưu</b> (phù hợp danh sách dài). Link là bản chụp dữ liệu tại thời điểm chia sẻ, không đồng bộ trực tiếp giữa các máy. Người có link hoặc file có thể xem danh sách.</span>
   </div>
   <div id="secNum" class="hide">
     <h4>Dải số may mắn</h4>
@@ -156,6 +170,103 @@ presets.forEach(p=>{const b=document.createElement("button");b.className="pre";b
 function theme(){const s=document.documentElement.style;[["--bg1","c1"],["--bg2","c2"],["--pri","cp"],["--acc","ca"],["--txt","ct"]].forEach(([v,i])=>s.setProperty(v,$(i).value));draw()}
 ["c1","c2","cp","ca","ct","w1","w2","w3","w4"].forEach(i=>$(i).oninput=theme);
 
+/* Lưu tự động tại trình duyệt và sao lưu qua máy khác.
+   GitHub Pages là static hosting; link/file là bản sao, không phải realtime cloud sync. */
+const STORAGE_KEY='vong-quay-may-man-state-v3';
+let saveTimer=0,saveErrorShown=false,restoring=false,lastSavedState='';
+const storedFields=['title','names','hdr','nmin','nmax','qty','dur','uniq','autoColors','c1','c2','cp','ca','ct','w1','w2','w3','w4'];
+function readState(){
+ const inputs={};for(const id of storedFields){const el=$(id);inputs[id]=el.type==='checkbox'?el.checked:el.value}
+ return {version:3,mode,inputs,won:Array.from(won),round,historyItems:Array.from($('hl').querySelectorAll(':scope > div'),e=>e.textContent),winnerItems:Array.from($('wl').querySelectorAll('.wc'),e=>e.textContent),
+   bgImage:$('bgimg').style.backgroundImage||'',hubImage:$('hub').style.backgroundImage||'',backgroundBrightness};
+}
+function statusSave(msg){$('saveStatus').textContent=msg}
+function saveState(){
+ if(restoring||busy)return false;
+ try{const data=JSON.stringify(readState());localStorage.setItem(STORAGE_KEY,data);lastSavedState=data;
+  statusSave('✓ Đã lưu trên máy này • '+new Date().toLocaleTimeString('vi-VN'));saveErrorShown=false;return true
+ }catch(err){statusSave('⚠ Không lưu được trên trình duyệt. Hãy xuất file sao lưu.');if(!saveErrorShown){saveErrorShown=true;console.warn('Không lưu được dữ liệu:',err)}return false}
+}
+function scheduleSave(){if(restoring||busy)return;clearTimeout(saveTimer);saveTimer=setTimeout(saveState,350)}
+function applyState(data){
+ if(!data||typeof data!=='object'||!data.inputs||!Array.isArray(data.won))throw Error('Dữ liệu sao lưu không hợp lệ');
+ if(busy)throw Error('Hãy dừng vòng quay trước khi nhập dữ liệu');
+ restoring=true;clearTimeout(saveTimer);
+ try{
+  for(const id of storedFields){if(!(id in data.inputs))continue;const el=$(id),v=data.inputs[id];if(el.type==='checkbox')el.checked=Boolean(v);else el.value=String(v).slice(0,id==='names'?2000000:200)}
+  mode=data.mode==='num'?'num':'list';won=new Set(data.won.map(String));round=Math.max(0,Number(data.round)||0);
+  // Khôi phục dưới dạng text để dữ liệu từ link/file không chạy mã HTML.
+  const historyItems=Array.isArray(data.historyItems)?data.historyItems:[];
+  const winnerItems=Array.isArray(data.winnerItems)?data.winnerItems:[];
+  $('hl').replaceChildren();$('hl').className='';
+  if(historyItems.length){for(const item of historyItems.slice(0,500)){const node=document.createElement('div');node.textContent=String(item);$('hl').append(node)}}
+  else{$('hl').textContent='Lịch sử các lần quay sẽ hiện ở đây';$('hl').className='empty'}
+  $('wl').replaceChildren();
+  if(winnerItems.length){for(const item of winnerItems.slice(0,500)){const node=document.createElement('div');node.className='wc';node.textContent=String(item);$('wl').append(node)}}
+  else{$('wl').innerHTML='<span class="empty">Chưa có kết quả</span>';}
+  $('bgimg').style.backgroundImage=typeof data.bgImage==='string'?data.bgImage:'';
+  $('hub').style.backgroundImage=typeof data.hubImage==='string'?data.hubImage:'';
+  $('hub').classList.toggle('has-image',Boolean(data.hubImage));
+  backgroundBrightness=Number(data.backgroundBrightness)||25;
+  $('tList').classList.toggle('on',mode==='list');$('tNum').classList.toggle('on',mode==='num');
+  $('secList').classList.toggle('hide',mode!=='list');$('secNum').classList.toggle('hide',mode!=='num');
+  theme();preview();
+ }finally{restoring=false}
+ scheduleSave();
+}
+function downloadBackup(){
+ const blob=new Blob([JSON.stringify(readState(),null,2)],{type:'application/json;charset=utf-8'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;
+ a.download='vong-quay-sao-luu-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+ statusSave('✓ Đã tải file sao lưu. Mang file sang máy khác và chọn “Nhập file sao lưu”.');
+}
+function bytesToBase64Url(bytes){let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+function base64UrlToBytes(text){let s=atob(text.replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(s,c=>c.charCodeAt(0))}
+async function compressData(text){const input=new TextEncoder().encode(text);if(typeof CompressionStream==='undefined')return 'u'+bytesToBase64Url(input);
+ const stream=new Blob([input]).stream().pipeThrough(new CompressionStream('gzip'));return 'g'+bytesToBase64Url(new Uint8Array(await new Response(stream).arrayBuffer()))}
+async function decompressData(value){let bytes=base64UrlToBytes(value.slice(1));if(value[0]==='g'){
+ if(typeof DecompressionStream==='undefined')throw Error('Trình duyệt này chưa hỗ trợ giải nén link. Hãy dùng file sao lưu.');
+ const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));bytes=new Uint8Array(await new Response(stream).arrayBuffer());
+ }else if(value[0]!=='u')throw Error('Liên kết không đúng định dạng');return new TextDecoder().decode(bytes)}
+async function shareBackup(){
+ try{
+  const encoded=await compressData(JSON.stringify(readState()));
+  const link=location.href.split('#')[0]+'#data='+encoded;
+  if(link.length>12000){alert('Danh sách khá dài nên link không đáng tin cậy. Hãy dùng “Xuất file sao lưu” để chuyển sang máy khác.');return}
+  try{await navigator.clipboard.writeText(link);statusSave('✓ Đã sao chép link dữ liệu. Gửi link này sang máy khác để mở lại danh sách và kết quả.');}
+  catch(e){const tmp=document.createElement('textarea');tmp.value=link;document.body.appendChild(tmp);tmp.select();let ok=document.execCommand('copy');tmp.remove();if(ok)statusSave('✓ Đã sao chép link dữ liệu.');else prompt('Sao chép liên kết này:',link)}
+ }catch(e){alert('Không tạo được link. Bạn vẫn có thể dùng “Xuất file sao lưu”.')}
+}
+async function restoreStartup(){
+ let source=null,fromLink=false;
+ const fragment=location.hash;
+ if(fragment.startsWith('#data=')){
+  try{source=JSON.parse(await decompressData(fragment.slice(6)));fromLink=true}
+  catch(err){alert('Không đọc được dữ liệu trong link: '+err.message)}
+ }
+ if(!source){try{source=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null')}catch(e){console.warn('Dữ liệu cũ bị lỗi',e)}}
+ if(source){try{applyState(source);statusSave(fromLink?'✓ Đã mở dữ liệu từ liên kết • Đã lưu trên máy này':'✓ Đã khôi phục dữ liệu đã lưu trên máy này');}
+  catch(err){console.warn(err);statusSave('⚠ Không khôi phục được dữ liệu.')}}
+ else statusSave('Chưa có dữ liệu đã lưu. Mọi thay đổi sẽ được tự động lưu trên máy này.');
+ // Gỡ fragment sau khi nhập để tránh nhập lại bản cũ khi tải lại trang.
+ if(fromLink)history.replaceState(null,'',location.pathname+location.search);
+}
+$('saveNow').onclick=()=>{if(busy){alert('Hãy chờ quay xong rồi lưu.');return}saveState()};
+$('exportData').onclick=downloadBackup;
+$('shareData').onclick=shareBackup;
+$('importData').onclick=()=>$('backupFile').click();
+$('backupFile').onchange=async e=>{
+ const f=e.target.files?.[0];if(!f)return;
+ try{if(f.size>10*1024*1024)throw Error('File sao lưu vượt 10 MB');const data=JSON.parse(await f.text());
+  if(!confirm('Nhập dữ liệu sẽ thay thế danh sách, kết quả và cài đặt hiện tại. Tiếp tục?'))return;
+  applyState(data);saveState();statusSave('✓ Đã nhập và lưu bản sao từ máy khác.');
+ }catch(err){alert('Không nhập được file: '+err.message)}finally{e.target.value=''}
+};
+// Bắt mọi thay đổi cấu hình, kể cả chỉnh tiêu đề và các nút trong panel.
+document.addEventListener('input',e=>{if(e.target.matches('#title,#names,#panel input,#panel textarea'))scheduleSave()});
+document.addEventListener('change',e=>{if(e.target.matches('#panel input,#panel textarea'))scheduleSave()});
+window.addEventListener('pagehide',()=>{if(!busy)saveState()});
+
 /* Bảng màu tương phản lấy cảm hứng từ độ sáng ảnh nền. */
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 function colorRgb(hex){let n=parseInt(hex.slice(1),16);return [(n>>16)&255,(n>>8)&255,n&255]}
@@ -188,9 +299,9 @@ $('autoColors').onchange=()=>{if($('autoColors').checked){updateBgBrightnessFrom
 $('hubf').onchange=e=>{const f=e.target.files?.[0];if(!f)return;
  const url=URL.createObjectURL(f),im=new Image();
  im.onload=()=>{const c=document.createElement('canvas');const ratio=Math.min(1,400/Math.max(im.width,im.height));c.width=Math.max(1,Math.round(im.width*ratio));c.height=Math.max(1,Math.round(im.height*ratio));c.getContext('2d').drawImage(im,0,0,c.width,c.height);
- $('hub').style.backgroundImage=`url("${c.toDataURL('image/png')}")`;$('hub').classList.add('has-image');URL.revokeObjectURL(url)};
+ $('hub').style.backgroundImage=`url("${c.toDataURL('image/png')}")`;$('hub').classList.add('has-image');scheduleSave();URL.revokeObjectURL(url)};
  im.onerror=()=>{alert('Không đọc được hình nút QUAY');URL.revokeObjectURL(url)};im.src=url;e.target.value='';};
-$('hubx').onclick=()=>{$('hub').style.backgroundImage='';$('hub').classList.remove('has-image')};
+$('hubx').onclick=()=>{$('hub').style.backgroundImage='';$('hub').classList.remove('has-image');scheduleSave()};
 
 $("bgf").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
  r.onerror=()=>alert("Không đọc được ảnh");
@@ -199,9 +310,9 @@ $("bgf").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileRea
    c.getContext("2d").drawImage(im,0,0,c.width,c.height);$("bgimg").style.backgroundImage=`url(${c.toDataURL("image/jpeg",.85)})`;
     const sc=document.createElement('canvas');sc.width=sc.height=32;let scx=sc.getContext('2d');scx.drawImage(im,0,0,32,32);let pixels=scx.getImageData(0,0,32,32).data,total=0;
     for(let j=0;j<pixels.length;j+=4)total+=(.2126*pixels[j]+.7152*pixels[j+1]+.0722*pixels[j+2]);
-    backgroundBrightness=total/(pixels.length/4);if($('autoColors').checked)randomPalette();};im.src=r.result};
+    backgroundBrightness=total/(pixels.length/4);if($('autoColors').checked)randomPalette();scheduleSave();};im.src=r.result};
  r.readAsDataURL(f);e.target.value=""};
-$("bgx").onclick=()=>{$("bgimg").style.backgroundImage="none";updateBgBrightnessFromColors();if($('autoColors').checked)randomPalette()};
+$("bgx").onclick=()=>{$("bgimg").style.backgroundImage="none";updateBgBrightnessFromColors();if($('autoColors').checked)randomPalette();scheduleSave()};
 $("bSet").onclick=()=>$("panel").classList.add("open");
 $("bClose").onclick=()=>$("panel").classList.remove("open");
 function setMute(){$("bMute").textContent=$("bMute2").textContent=muted?"🔇":"🔊"}
@@ -322,20 +433,20 @@ async function run(){
   if(k<n-1)await sleep(1100)}
  round++;const hl=$("hl");if(round==1){hl.innerHTML="";hl.className=""}
  const h=document.createElement("div");h.innerHTML=`<b>Lần ${round}:</b> ${got.map(esc).join(", ")}`;hl.prepend(h);
- busy=false;$("hub").disabled=$("go").disabled=false;$("stop").disabled=true;$("stop").textContent="DỪNG";await sleep(2500);if(!busy)preview()}
+ busy=false;saveState();$("hub").disabled=$("go").disabled=false;$("stop").disabled=true;$("stop").textContent="DỪNG";await sleep(2500);if(!busy)preview()}
 $("hub").onclick=run;$("go").onclick=run;cv.onclick=run;
 function setMode(m){if(busy)return;mode=m;$("tList").classList.toggle("on",m=="list");$("tNum").classList.toggle("on",m=="num");
- $("secList").classList.toggle("hide",m!="list");$("secNum").classList.toggle("hide",m!="num");preview()}
+ $("secList").classList.toggle("hide",m!="list");$("secNum").classList.toggle("hide",m!="num");preview();scheduleSave()}
 $("tList").onclick=()=>setMode("list");$("tNum").onclick=()=>setMode("num");
 $("names").oninput=()=>{if(!busy)preview()};["nmin","nmax","uniq"].forEach(i=>$(i).onchange=()=>{if(!busy)preview()});
-$("bReset").onclick=()=>{won.clear();if(!busy)preview()};
+$("bReset").onclick=()=>{won.clear();if(!busy){preview();scheduleSave()}};
 $("xl").onchange=async e=>{const f=e.target.files[0];if(!f)return;
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
  let col=rows.map(r=>String(r[0]??"").trim()).filter(Boolean);if($("hdr").checked)col=col.slice(1);
- $("names").value=col.join("\n");won.clear();preview();alert(`Đã nhập ${col.length} tên từ file`)}
+ $("names").value=col.join("\n");won.clear();preview();saveState();alert(`Đã nhập ${col.length} tên từ file`)}
  catch(err){alert("Không đọc được file Excel")}e.target.value=""};
-addEventListener("resize",size);updateBgBrightnessFromColors();size();preview();
+addEventListener("resize",size);updateBgBrightnessFromColors();size();preview();restoreStartup();
 try{document.fonts.load('800 20px "Be Vietnam Pro"').then(draw)}catch(e){}
 </script>
 </body>
