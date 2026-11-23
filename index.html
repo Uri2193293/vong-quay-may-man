@@ -39,7 +39,11 @@ main{max-width:1100px;margin:0 auto;padding:4px 16px 40px;text-align:center}
 #hub.has-image{background-position:center!important;background-size:cover!important;background-repeat:no-repeat!important;color:var(--hub-text,#fff);text-shadow:0 1px 5px #000b}
 #colorStatus{display:block;opacity:.75;font-size:12px;line-height:1.5;margin-top:5px}
 #side{width:min(680px,100%);text-align:left;background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:14px 16px;backdrop-filter:blur(10px)}
-#side h3{margin:0 0 10px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--pri)}
+#side h3{margin:0;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--pri)}
+.winner-heading{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+#resetWinners{font-size:12px;padding:7px 12px;border-radius:9px;border:1px solid #fb718580;color:#fecdd3;background:#fb718514;letter-spacing:.02em;white-space:nowrap}
+#resetWinners:hover{border-color:#fb7185;background:#fb71852b;box-shadow:0 0 10px #fb718533}
+#resetWinners:disabled{opacity:.45;cursor:not-allowed}
 #wl{display:flex;flex-wrap:wrap;gap:8px}
 .wc{display:flex;align-items:center;gap:10px;background:#ffffff14;border:1px solid var(--pri);border-radius:12px;padding:8px 14px;font-weight:800;font-size:18px;animation:pop .5s;box-shadow:0 0 16px #22d3ee44}
 .wc i{font-style:normal;background:linear-gradient(135deg,var(--pri),var(--acc));color:#05060f;border-radius:8px;min-width:26px;text-align:center;padding:1px 6px;font-size:14px}
@@ -95,7 +99,10 @@ body.fs .wc{font-size:26px;width:100%}
       <div class="spin-controls"><button id="go">QUAY</button><button id="stop" disabled>DỪNG</button></div>
     </div>
     <div id="side">
-      <h3>🏆 Người trúng giải</h3>
+      <div class="winner-heading">
+        <h3>🏆 Người trúng giải</h3>
+        <button id="resetWinners" type="button" title="Xóa lịch sử và cho phép quay lại từ đầu">↺ RESET</button>
+      </div>
       <div id="wl"><span class="empty">Chưa có kết quả</span></div>
       <div id="hist"><div id="hl" class="empty">Lịch sử các lần quay sẽ hiện ở đây</div></div>
     </div>
@@ -440,6 +447,16 @@ function setMode(m){if(busy)return;mode=m;$("tList").classList.toggle("on",m=="l
 $("tList").onclick=()=>setMode("list");$("tNum").onclick=()=>setMode("num");
 $("names").oninput=()=>{if(!busy)preview()};["nmin","nmax","uniq"].forEach(i=>$(i).onchange=()=>{if(!busy)preview()});
 $("bReset").onclick=()=>{won.clear();if(!busy){preview();scheduleSave()}};
+// Reset hoàn toàn khu vực Người trúng giải; giữ nguyên dữ liệu tên đã nhập.
+$("resetWinners").onclick=()=>{
+ if(busy){alert("Vui lòng chờ vòng quay kết thúc trước khi reset.");return}
+ if(!confirm("Xóa toàn bộ người trúng giải và lịch sử các lần quay?\nDanh sách tên đã nhập vẫn được giữ nguyên."))return;
+ won.clear();round=0;
+ $("wl").innerHTML='<span class="empty">Chưa có kết quả</span>';
+ $("hl").textContent='Lịch sử các lần quay sẽ hiện ở đây';
+ $("hl").className='empty';
+ preview();saveState();
+};
 $("xl").onchange=async e=>{const f=e.target.files[0];if(!f)return;
  try{const wb=XLSX.read(await f.arrayBuffer(),{type:"array"});
  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:""});
